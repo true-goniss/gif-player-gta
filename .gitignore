@@ -1,0 +1,9 @@
+packages.config
+trash.h
+
+*.vcxproj
+*.vcxproj.user
+*.vcxproj.filters
+
+.obj/
+.git/
