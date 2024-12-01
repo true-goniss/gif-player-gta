@@ -3,7 +3,8 @@
 #include <stdexcept>
 #include <iostream>
 
-#include "Renderer.h"
+#include "RendererStreamedRasters.h"
+#include "RendererPreloadedRasters.h"
 #include "GifDecoder.h"
 
 using namespace plugin;
@@ -11,23 +12,36 @@ using namespace std;
 
 class gif_player {
 
+    static inline const char* gifPath = "example.gif";
+
+    std::vector<std::vector<unsigned char>> frames_gif = GifDecoder::processGif(gifPath);
+
+    Renderer* renderer = new RendererPreloadedRasters(frames_gif);
 
     inline void DisplayFrames(const char* gifPath, std::vector<std::vector<unsigned char>> frames_gif) {
 
         std::this_thread::sleep_for(std::chrono::milliseconds(6000));
 
-        while(true){
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
-            if (!GifDecoder::checkIfGifWasLoaded(gifPath)) continue;
-
+        while (!GifDecoder::checkIfGifWasLoaded(gifPath)) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
 
-            for (const auto& frame : frames_gif) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                Renderer::SetFrame(frame.data(), frame.size());
-            }      
+        if (typeid(*renderer) == typeid(RendererStreamedRasters)) {
+
+            while (true) {
+                for (const auto& frame : frames_gif) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(renderer->frameDelayMs));
+                    renderer->SetFrame(frame.data(), frame.size());
+                }
+            }
+        }
+        else if (typeid(*renderer) == typeid(RendererPreloadedRasters)) {
+
+            while (true) {
+
+                std::this_thread::sleep_for(std::chrono::milliseconds(renderer->frameDelayMs));
+                renderer->NextFrame();
+            }
         }
     }
 
@@ -35,10 +49,8 @@ public:
 
     gif_player() {
 
-        const char* gifPath = "example.gif";
-
-        Events::drawHudEvent += [] {
-            Renderer::Initialize();
+        Events::drawHudEvent += [this] {
+            renderer->Initialize();
         };
 
         //float mult1 = 2.7f;
@@ -50,7 +62,7 @@ public:
         int gifWidth = screenShortSide;
         int gifHeight = screenWideSide; // (screenWideSide / 7) * 3;
 
-        Events::drawingEvent += [this, gifPath, screenShortSide, screenWideSide, gifHeight] {
+        Events::drawingEvent += [this, screenShortSide, screenWideSide, gifHeight] {
 
             if (GifDecoder::checkIfGifWasLoaded(gifPath)){
 
@@ -68,13 +80,11 @@ public:
 
                     CRGBA color = CRGBA(255, 255, 255, 255);
 
-                    Renderer::Render(rect, color);
+                    renderer->Render(rect, color);
                 }
                 catch (std::exception ee) {}
             }
         };
-
-        std::vector<std::vector<unsigned char>> frames_gif = GifDecoder::processGif(gifPath);
 
         std::thread threadObj(&gif_player::DisplayFrames, this, gifPath, frames_gif);
         threadObj.detach();
